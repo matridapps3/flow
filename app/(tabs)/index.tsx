@@ -165,6 +165,15 @@ export default function HomeScreen() {
   };
 
   const resetTimer = () => {
+    if (isRunning || isPaused) {
+      setTodaySessions((p) => p + 1);
+      setWeekSessions((p) => p + 1);
+      saveSession({
+        duration_minutes: duration,
+        completed_at: new Date().toISOString(),
+        completed: false,
+      });
+    }
     setIsRunning(false);
     setIsPaused(false);
     setRemaining(duration * 60);
@@ -182,6 +191,7 @@ export default function HomeScreen() {
     saveSession({
       duration_minutes: duration,
       completed_at: new Date().toISOString(),
+      completed: true,
     });
 
     animateScale(1.1, 1);
@@ -354,7 +364,7 @@ export default function HomeScreen() {
                 backgroundColor: colors.warning,
               }}
             >
-              <Text style={{ fontWeight: "600", fontSize: 20 }}>Pause</Text>
+              <Text style={{ fontWeight: "600", fontSize: 19 }}>Pause</Text>
             </Pressable>
           )}
           {isPaused && (
@@ -381,7 +391,7 @@ export default function HomeScreen() {
                 backgroundColor: "#ee4646",
               }}
             >
-              <Text style={{ fontWeight: "600", fontSize: 20 }}>Stop</Text>
+              <Text style={{ fontWeight: "600", fontSize: 19 }}>Stop</Text>
             </Pressable>
           )}
         </View>

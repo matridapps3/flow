@@ -29,6 +29,8 @@ function removeItem(key: string): Promise<void> {
 export interface SessionRecord {
   duration_minutes: number;
   completed_at: string;
+  /** false when user stopped before finishing; omitted or true = completed */
+  completed?: boolean;
 }
 
 export async function getSessions(): Promise<SessionRecord[]> {

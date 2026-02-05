@@ -12,12 +12,12 @@ export default function History() {
 
   useFocusEffect(
     useCallback(() => {
-      loadAppState().then((s) => {
-        setSessionsCount(s.week_sessions);
-        setCompletedCount(s.week_sessions);
-        setAvgScore(s.focus_score);
+      loadAppState().then((s) => setAvgScore(s.focus_score));
+      getSessions().then((list) => {
+        setSessions(list);
+        setSessionsCount(list.length);
+        setCompletedCount(list.filter((s) => s.completed !== false).length);
       });
-      getSessions().then(setSessions);
     }, [])
   );
 
@@ -135,7 +135,7 @@ export default function History() {
                   lineHeight: 20,
                 }}
               >
-                Your completed focus sessions will appear here.
+                Your focus sessions (completed and stopped) will appear here.
                 {"\n"}
                 Start a session to begin building momentum.
               </Text>
@@ -153,15 +153,28 @@ export default function History() {
                   backgroundColor: colors.card,
                 }}
               >
-                <Text
-                  style={{
-                    color: colors.text,
-                    fontSize: 16,
-                    fontWeight: "600",
-                  }}
-                >
-                  {s.duration_minutes} min
-                </Text>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  <Text
+                    style={{
+                      color: colors.text,
+                      fontSize: 16,
+                      fontWeight: "600",
+                    }}
+                  >
+                    {s.duration_minutes} min
+                  </Text>
+                  {s.completed === false && (
+                    <Text
+                      style={{
+                        color: '#eb3d3d',
+                        fontSize: 11,
+                        letterSpacing: 1,
+                      }}
+                    >
+                      Stopped
+                    </Text>
+                  )}
+                </View>
                 <Text
                   style={{
                     color: colors.muted,
