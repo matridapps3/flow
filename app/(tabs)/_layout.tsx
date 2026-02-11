@@ -1,6 +1,5 @@
 import { HapticTab } from "@/components/haptic-tab";
 import Navbar from "@/components/ui/navbar";
-import { Colors } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { Image } from "expo-image";
 import { Tabs } from "expo-router";
@@ -26,12 +25,12 @@ export default function TabLayout() {
         screenOptions={{
           headerShown: false,
           tabBarButton: HapticTab,
-          tabBarActiveTintColor: Colors[colorScheme ?? "light"].tint,
+          tabBarActiveTintColor: "#3b82f6",
           tabBarInactiveTintColor: "#888",
           tabBarStyle: {
             height: 88,
             paddingBottom: insets.bottom,
-            paddingTop: 5,
+            paddingTop: 6,
             borderTopWidth: 1,
             backgroundColor: "#030303",
             borderTopColor: "#2a3546",

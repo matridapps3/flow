@@ -29,6 +29,10 @@ export interface AppState {
   focus_score: number;
   show_reflection: boolean;
   streak: number;
+  /** Daily reminder (local notification). Native only. */
+  reminder_enabled: boolean;
+  /** Hour of day 0-23 for daily reminder. */
+  reminder_hour: number;
 }
 
 const defaults: AppState = {
@@ -42,6 +46,8 @@ const defaults: AppState = {
   focus_score: 0,
   show_reflection: false,
   streak: 0,
+  reminder_enabled: false,
+  reminder_hour: 18,
 };
 
 export async function loadAppState(): Promise<AppState> {
@@ -56,11 +62,14 @@ export async function loadAppState(): Promise<AppState> {
 }
 
 export async function saveAppState(state: Partial<AppState>): Promise<void> {
-  try {
-    const current = await loadAppState();
-    const next = { ...current, ...state };
-    await setItem(KEY, JSON.stringify(next));
-  } catch {
-    // ignore
-  }
+  const current = await loadAppState();
+  const next = { ...current, ...state };
+  await setItem(KEY, JSON.stringify(next));
+}
+
+/**
+ * Resets app state to defaults (all sessions remain; use with clearSessions for full wipe).
+ */
+export async function resetAppState(): Promise<void> {
+  await setItem(KEY, JSON.stringify(defaults));
 }

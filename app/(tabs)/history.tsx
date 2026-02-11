@@ -1,14 +1,67 @@
-import { loadAppState } from "@/storage/app-state";
-import { getSessions, type SessionRecord } from "@/storage/sessions";
+import { getSessionTypeLabel } from "@/storage/analytics";
+import { loadAppState, saveAppState } from "@/storage/app-state";
+import { clearSessions, getSessions, type SessionRecord } from "@/storage/sessions";
 import { useFocusEffect } from "@react-navigation/native";
 import { useCallback, useRef, useState } from "react";
-import { Animated, PanResponder, ScrollView, Text, View } from "react-native";
+import {
+  Alert,
+  Animated,
+  PanResponder,
+  Platform,
+  Pressable,
+  ScrollView,
+  Text,
+  View,
+} from "react-native";
 
 export default function History() {
   const [sessionsCount, setSessionsCount] = useState(0);
   const [completedCount, setCompletedCount] = useState(0);
   const [avgScore, setAvgScore] = useState(0);
   const [sessions, setSessions] = useState<SessionRecord[]>([]);
+  const [clearing, setClearing] = useState(false);
+
+  const runClearHistory = useCallback(async () => {
+    setClearing(true);
+    try {
+      await clearSessions();
+      await saveAppState({ today_sessions: 0, week_sessions: 0 });
+      const list = await getSessions();
+      const state = await loadAppState();
+      setSessions(list);
+      setSessionsCount(list.length);
+      setCompletedCount(list.filter((s) => s.completed !== false).length);
+      setAvgScore(state.focus_score);
+    } catch {
+      if (Platform.OS === "web" && typeof window !== "undefined") {
+        window.alert("Could not clear history.");
+      } else {
+        Alert.alert("Error", "Could not clear history.");
+      }
+    } finally {
+      setClearing(false);
+    }
+  }, []);
+
+  const handleClearHistory = () => {
+    const title = "Clear history?";
+    const message =
+      "This will remove all sessions from history. Session counts on Home will be reset. This cannot be undone.";
+    if (Platform.OS === "web" && typeof window !== "undefined") {
+      if (window.confirm(`${title}\n\n${message}`)) void runClearHistory();
+      return;
+    }
+    Alert.alert(title, message, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Clear",
+        style: "destructive",
+        onPress: () => {
+          void runClearHistory();
+        },
+      },
+    ]);
+  };
 
   useFocusEffect(
     useCallback(() => {
@@ -96,6 +149,35 @@ export default function History() {
           <Stat label="AVG SCORE" value={avgScore} />
         </View>
 
+        {sessions.length > 0 && (
+          <View style={{ paddingHorizontal: 24, marginBottom: 16 }}>
+            <Pressable
+              onPress={handleClearHistory}
+              disabled={clearing}
+              style={({ pressed }) => ({
+                paddingVertical: 12,
+                paddingHorizontal: 16,
+                borderRadius: 12,
+                backgroundColor: "#7f1d1d",
+                borderWidth: 1,
+                borderColor: "#991b1b",
+                opacity: clearing || pressed ? 0.7 : 1,
+              })}
+            >
+              <Text
+                style={{
+                  color: "#fca5a5",
+                  fontWeight: "600",
+                  fontSize: 14,
+                  textAlign: "center",
+                }}
+              >
+                {clearing ? "Clearing…" : "Clear history"}
+              </Text>
+            </Pressable>
+          </View>
+        )}
+
         {/* ───── Content ───── */}
         <ScrollView
           contentContainerStyle={{
@@ -132,7 +214,7 @@ export default function History() {
                 style={{
                   color: colors.muted,
                   textAlign: "center",
-                  lineHeight: 20,
+                  lineHeight: 22,
                 }}
               >
                 Your focus sessions (completed and stopped) will appear here.
@@ -163,10 +245,18 @@ export default function History() {
                   >
                     {s.duration_minutes} min
                   </Text>
+                  <Text
+                    style={{
+                      color: colors.muted,
+                      fontSize: 12,
+                    }}
+                  >
+                    · {getSessionTypeLabel(s)}
+                  </Text>
                   {s.completed === false && (
                     <Text
                       style={{
-                        color: '#eb3d3d',
+                        color: "#eb3d3d",
                         fontSize: 11,
                         letterSpacing: 1,
                       }}
@@ -194,7 +284,9 @@ export default function History() {
 }
 
 function formatSessionDate(iso: string): string {
+  if (!iso || typeof iso !== "string") return "—";
   const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return "—";
   const now = new Date();
   const isToday =
     d.getDate() === now.getDate() &&

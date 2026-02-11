@@ -1,4 +1,10 @@
-import { useState } from "react";
+import { loadAppState, saveAppState } from "@/storage/app-state";
+import {
+  getSessions,
+  updateLatestCompletedSessionReflection,
+} from "@/storage/sessions";
+import { useFocusEffect } from "@react-navigation/native";
+import { useCallback, useState } from "react";
 import {
   KeyboardAvoidingView,
   Platform,
@@ -23,10 +29,31 @@ export default function Reflect() {
   const [reflection, setReflection] = useState("");
   const [saved, setSaved] = useState(false);
 
-  const saveReflection = () => {
+  useFocusEffect(
+    useCallback(() => {
+      getSessions().then((sessions) => {
+        const completed = sessions.filter((s) => s.completed !== false);
+        const latest = completed[0];
+        if (latest?.reflection) {
+          setReflection(latest.reflection);
+          setSaved(true);
+        } else {
+          setReflection("");
+          setSaved(false);
+        }
+      });
+    }, [])
+  );
+
+  const saveReflection = async () => {
     if (!reflection.trim()) return;
-    // later: persist locally + feed analytics engine
+    await updateLatestCompletedSessionReflection(reflection);
+    await saveAppState({ show_reflection: false });
     setSaved(true);
+  };
+
+  const skipReflection = async () => {
+    await saveAppState({ show_reflection: false });
   };
 
   return (
@@ -121,26 +148,39 @@ export default function Reflect() {
             </Text>
 
             {!saved ? (
-              <Pressable
-                onPress={saveReflection}
-                style={({ pressed }) => ({
-                  paddingVertical: 10,
-                  paddingHorizontal: 18,
-                  borderRadius: 14,
-                  backgroundColor: colors.accent,
-                  opacity: pressed ? 0.7 : 1,
-                })}
-              >
-                <Text
-                  style={{
-                    color: "#000",
-                    fontWeight: "600",
-                    fontSize: 14,
-                  }}
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+                <Pressable
+                  onPress={skipReflection}
+                  style={({ pressed }) => ({
+                    paddingVertical: 10,
+                    paddingHorizontal: 14,
+                    borderRadius: 12,
+                    opacity: pressed ? 0.7 : 1,
+                  })}
                 >
-                  Save
-                </Text>
-              </Pressable>
+                  <Text style={{ color: colors.muted, fontSize: 13 }}>Skip</Text>
+                </Pressable>
+                <Pressable
+                  onPress={saveReflection}
+                  style={({ pressed }) => ({
+                    paddingVertical: 10,
+                    paddingHorizontal: 18,
+                    borderRadius: 12,
+                    backgroundColor: colors.accent,
+                    opacity: pressed ? 0.7 : 1,
+                  })}
+                >
+                  <Text
+                    style={{
+                      color: "#000",
+                      fontWeight: "600",
+                      fontSize: 14,
+                    }}
+                  >
+                    Save
+                  </Text>
+                </Pressable>
+              </View>
             ) : (
               <Text
                 style={{
@@ -162,7 +202,7 @@ export default function Reflect() {
               color: colors.muted,
               fontSize: 12,
               textAlign: "center",
-              lineHeight: 18,
+              lineHeight: 20,
             }}
           >
             Reflections improve future insights.
