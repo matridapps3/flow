@@ -1,15 +1,3 @@
-import {
-  getMilestoneMessage,
-  getMomentum,
-  getRecoveryRecommendation,
-  getSessionTypeLabel,
-  getWorkloadWarning,
-  type MomentumKind,
-} from "@/storage/analytics";
-import { loadAppState, saveAppState } from "@/storage/app-state";
-import { DURATIONS } from "@/storage/constants";
-import { getSessions, saveSession, type SessionRecord } from "@/storage/sessions";
-import { getDailyStreak, getWeeklyStreak } from "@/storage/streaks";
 import { useFocusEffect } from "@react-navigation/native";
 import * as Haptics from "expo-haptics";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -18,11 +6,29 @@ import {
   PanResponder,
   Pressable,
   ScrollView,
+  Switch,
   Text,
   useWindowDimensions,
   View,
 } from "react-native";
 import Svg, { Circle } from "react-native-svg";
+import WelcomeScreen from "../../components/welcome-screen";
+import {
+  getRecoveryRecommendation,
+  getSessionTypeLabel,
+  getWorkloadWarning,
+} from "../../storage/analytics";
+import { loadAppState, saveAppState } from "../../storage/app-state";
+import { DURATIONS } from "../../storage/constants";
+import {
+  fadeInAmbient,
+  fadeOutAmbient,
+  initAmbientSound,
+  playAmbientTracks,
+  releaseAmbientSound,
+  stopAmbientTracks,
+} from "../../storage/ambient-sound";
+import { getSessions, saveSession, type SessionRecord } from "../../storage/sessions";
 
 const HISTORY_PANEL_HEIGHT = 280;
 const HISTORY_HANDLE_HEIGHT = 44;
@@ -41,14 +47,12 @@ export default function HomeScreen() {
   const [focusScore, setFocusScore] = useState(0);
   const [showReflection, setShowReflection] = useState(false);
   const [streak, setStreak] = useState(0);
-  const [dailyStreak, setDailyStreak] = useState(0);
-  const [weeklyStreak, setWeeklyStreak] = useState(0);
   const [todayCompletedCount, setTodayCompletedCount] = useState(0);
   const [recentSessions, setRecentSessions] = useState<SessionRecord[]>([]);
-  const [momentum, setMomentum] = useState<MomentumKind | null>(null);
-  const [milestoneMessage, setMilestoneMessage] = useState<string | null>(null);
   const [recoveryRecommendation, setRecoveryRecommendation] = useState<string | null>(null);
   const [workloadWarning, setWorkloadWarning] = useState<string | null>(null);
+  const [showWelcome, setShowWelcome] = useState<boolean | null>(null);
+  const [ambientTracks, setAmbientTracks] = useState<[boolean, boolean, boolean]>([false, false, false]);
 
   /* ---------------- LOAD / SAVE ---------------- */
   useEffect(() => {
@@ -77,6 +81,10 @@ export default function HomeScreen() {
       setFocusScore(s.focus_score);
       setShowReflection(s.show_reflection);
       setStreak(s.streak);
+      setShowWelcome(!s.has_seen_onboarding);
+      if (Array.isArray(s.ambient_tracks) && s.ambient_tracks.length === 3) {
+        setAmbientTracks([s.ambient_tracks[0], s.ambient_tracks[1], s.ambient_tracks[2]]);
+      }
     });
     return () => {
       mounted = false;
@@ -95,6 +103,7 @@ export default function HomeScreen() {
       focus_score: focusScore,
       show_reflection: showReflection,
       streak,
+      ambient_tracks: ambientTracks,
     });
   }, [
     currentIndex,
@@ -107,6 +116,7 @@ export default function HomeScreen() {
     focusScore,
     showReflection,
     streak,
+    ambientTracks,
   ]);
 
   /* ---------------- RESPONSIVE CONSTANTS ---------------- */
@@ -137,14 +147,11 @@ export default function HomeScreen() {
   /* ---------------- HISTORY PULL-UP + STREAKS (from device storage) ---------------- */
   const refreshSessionsAndStreaks = useCallback(() => {
     getSessions().then((list) => {
-      setRecentSessions(list.slice(0, 10));
-      setDailyStreak(getDailyStreak(list));
-      setWeeklyStreak(getWeeklyStreak(list));
-      setMomentum(getMomentum(list));
-      setMilestoneMessage(getMilestoneMessage(list));
-      setWorkloadWarning(getWorkloadWarning(list));
+      const sessions = Array.isArray(list) ? list : [];
+      setRecentSessions(sessions.slice(0, 10));
+      setWorkloadWarning(getWorkloadWarning(sessions));
       const today = new Date().toDateString();
-      const todayCompleted = list.filter(
+      const todayCompleted = sessions.filter(
         (s) => {
           if (s.completed === false || !s.completed_at) return false;
           const t = new Date(s.completed_at).getTime();
@@ -182,10 +189,28 @@ export default function HomeScreen() {
         setFocusScore(s.focus_score);
         setShowReflection(s.show_reflection);
         setStreak(s.streak);
+        setShowWelcome(!s.has_seen_onboarding);
+        if (Array.isArray(s.ambient_tracks) && s.ambient_tracks.length === 3) {
+          setAmbientTracks([s.ambient_tracks[0], s.ambient_tracks[1], s.ambient_tracks[2]]);
+        }
         setTimeout(() => refreshSessionsRef.current(), 0);
       });
     }, [])
   );
+
+  const ambientTracksRef = useRef(ambientTracks);
+  ambientTracksRef.current = ambientTracks;
+  const isRunningRef = useRef(isRunning);
+  const isPausedRef = useRef(isPaused);
+  isRunningRef.current = isRunning;
+  isPausedRef.current = isPaused;
+
+  useEffect(() => {
+    initAmbientSound();
+    return () => {
+      fadeOutAmbient().then(() => stopAmbientTracks()).then(() => releaseAmbientSound());
+    };
+  }, []);
 
   useEffect(() => {
     refreshSessionsAndStreaks();
@@ -224,6 +249,7 @@ export default function HomeScreen() {
 
   /* ---------------- TIMER ---------------- */
   const completedThisRunRef = useRef(false);
+  const completeSessionRef = useRef<() => void>(() => {});
   useEffect(() => {
     if (isRunning && remaining > 0) {
       completedThisRunRef.current = false;
@@ -232,7 +258,7 @@ export default function HomeScreen() {
           if (prev <= 1) {
             if (!completedThisRunRef.current) {
               completedThisRunRef.current = true;
-              completeSession();
+              completeSessionRef.current();
             }
             return 0;
           }
@@ -272,18 +298,31 @@ export default function HomeScreen() {
     setIsRunning(true);
     setIsPaused(false);
     animateScale(1.05, 1);
+    const active = ambientTracksRef.current;
+    if (active.some(Boolean)) {
+      initAmbientSound().then(() => {
+        playAmbientTracks(active).then(() => fadeInAmbient(active));
+      });
+    }
   };
 
   const pauseTimer = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setIsRunning(false);
     setIsPaused(true);
+    fadeOutAmbient().then(() => stopAmbientTracks());
   };
 
   const resumeTimer = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setIsRunning(true);
     setIsPaused(false);
+    const active = ambientTracksRef.current;
+    if (active.some(Boolean)) {
+      initAmbientSound().then(() => {
+        playAmbientTracks(active).then(() => fadeInAmbient(active));
+      });
+    }
   };
 
   const resetTimer = () => {
@@ -296,6 +335,7 @@ export default function HomeScreen() {
         completed_at: new Date().toISOString(),
         completed: false,
       }).then(refreshSessionsAndStreaks);
+      fadeOutAmbient().then(() => stopAmbientTracks());
     }
     setIsRunning(false);
     setIsPaused(false);
@@ -306,6 +346,7 @@ export default function HomeScreen() {
   const completeSession = () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setIsRunning(false);
+    fadeOutAmbient().then(() => stopAmbientTracks());
     setTodaySessions((p) => p + 1);
     setWeekSessions((p) => p + 1);
     setFocusScore((p) => Math.min(100, p + 1));
@@ -321,6 +362,8 @@ export default function HomeScreen() {
     animateScale(1.1, 1);
   };
 
+  completeSessionRef.current = completeSession;
+
   const currentIndexRef = useRef(currentIndex);
   currentIndexRef.current = currentIndex;
 
@@ -328,7 +371,7 @@ export default function HomeScreen() {
   const panResponder = useRef(
     PanResponder.create({
       onMoveShouldSetPanResponder: (_, g) =>
-        Math.abs(g.dx) > 20 && !isRunning && !isPaused,
+        Math.abs(g.dx) > 20 && !isRunningRef.current && !isPausedRef.current,
       onPanResponderRelease: (_, g) => {
         const idx = currentIndexRef.current;
         if (g.dx < -50 && idx < DURATIONS.length - 1) {
@@ -369,7 +412,9 @@ export default function HomeScreen() {
       : colors.primary;
 
   const formatSessionDate = (iso: string) => {
+    if (!iso || typeof iso !== "string") return "—";
     const d = new Date(iso);
+    if (!Number.isFinite(d.getTime())) return "—";
     const now = new Date();
     const isToday =
       d.getDate() === now.getDate() &&
@@ -387,18 +432,24 @@ export default function HomeScreen() {
   };
 
   /* ---------------- UI ---------------- */
-  const bg = "black";
+  const bg = "#0a0a0a";
   const cardBg = "#111";
-  const border = "#1f1f1f";
-  const inactiveButtonBg = "#18181a";
+  const border = "#26262a";
+  const inactiveButtonBg = "#1a1a1e";
+
+  const dismissWelcome = async () => {
+    await saveAppState({ has_seen_onboarding: true });
+    setShowWelcome(false);
+  };
 
   return (
     <View style={{ flex: 1, backgroundColor: bg }}>
+      {showWelcome === true && <WelcomeScreen onDismiss={dismissWelcome} />}
       <ScrollView
         contentContainerStyle={{
           flexGrow: 1,
           justifyContent: "center",
-          backgroundColor: bg,
+          backgroundColor: 'black',
           paddingVertical: VERTICAL_PADDING,
           paddingHorizontal: RING_HORIZONTAL_PADDING,
           paddingBottom: HISTORY_HANDLE_HEIGHT + 24,
@@ -477,46 +528,6 @@ export default function HomeScreen() {
           </View>
         </Animated.View>
 
-        {/* Session chaining: after complete, suggest break or next session */}
-        {showReflection && (
-          <View
-            style={{
-              marginTop: 24,
-              marginBottom: 16,
-              padding: 20,
-              borderRadius: 16,
-              backgroundColor: "#0f172a",
-              borderWidth: 1,
-              borderColor: "#1e293b",
-              alignItems: "center",
-            }}
-          >
-            <Text
-              style={{
-                color: "#94a3b8",
-                fontSize: 14,
-                marginBottom: 14,
-              }}
-            >
-              Take a {recoveryRecommendation ?? "5 min"} break?
-            </Text>
-            <Pressable
-              onPress={startNextSession}
-              style={({ pressed }) => ({
-                paddingVertical: 10,
-                paddingHorizontal: 20,
-                borderRadius: 12,
-                backgroundColor: colors.primary,
-                opacity: pressed ? 0.85 : 1,
-              })}
-            >
-              <Text style={{ color: "#000", fontWeight: "600", fontSize: 14 }}>
-                Start next session
-              </Text>
-            </Pressable>
-          </View>
-        )}
-
         {/* Recovery nudge: after 3+ completed today */}
         {!showReflection && todayCompletedCount >= 3 && (
           <View style={{ marginBottom: 12, alignItems: "center" }}>
@@ -527,7 +538,7 @@ export default function HomeScreen() {
                 fontStyle: "italic",
               }}
             >
-              You've done {todayCompletedCount} sessions. Consider a longer break.
+              {"You've"} done {todayCompletedCount} sessions. Consider a longer break.
               {recoveryRecommendation && (
                 <Text style={{ fontWeight: "600" }}> Recommended break: {recoveryRecommendation}.</Text>
               )}
@@ -643,69 +654,114 @@ export default function HomeScreen() {
           })}
         </View>
 
-        {/* MULTI-TIER STREAKS (from sessions in device storage) */}
+        {/* Ambient sounds: 3 tracks, mix on, fade at session boundaries — uses space of former streak card */}
         <View
           style={{
             marginTop: 40,
             alignSelf: "stretch",
-            marginHorizontal: 78,
-            paddingVertical: 18,
+            marginHorizontal: 58,
+            paddingVertical: 17,
             paddingHorizontal: 20,
             borderRadius: 14,
             backgroundColor: inactiveButtonBg,
             borderWidth: 1,
             borderColor: border,
-            alignItems: "center",
           }}
         >
           <Text
             style={{
               color: "#9ca3af",
+              fontSize: 12,
               fontWeight: "600",
-              fontSize: 13,
-              letterSpacing: 1.2,
+              letterSpacing: 1,
+              marginBottom: 14,
+              textAlign: "center",
             }}
           >
-            DAILY STREAK <Text style={{ color: colors.primary, fontWeight: "700" }}>{dailyStreak}</Text>
+            AMBIENT SOUNDS
           </Text>
-          <Text
-            style={{
-              color: "#9ca3af",
-              fontWeight: "600",
-              fontSize: 13,
-              letterSpacing: 1.2,
-              marginTop: 8,
-            }}
-          >
-            WEEKLY STREAK <Text style={{ color: colors.accent, fontWeight: "700" }}>{weeklyStreak}</Text>
-          </Text>
-          {momentum && (
-            <Text
-              style={{
-                color: momentum === "up" ? "#4ade80" : momentum === "down" ? "#f87171" : "#9ca3af",
-                fontSize: 12,
-                marginTop: 10,
-                fontWeight: "600",
-              }}
-            >
-              {momentum === "up" ? "↑ Trending up" : momentum === "down" ? "↓ Trending down" : "→ Sustaining"}
-            </Text>
-          )}
-          {milestoneMessage && (
-            <Text
-              style={{
-                color: colors.accent,
-                fontSize: 11,
-                marginTop: 6,
-                textAlign: "center",
-              }}
-            >
-              {milestoneMessage}
-            </Text>
-          )}
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 16 }}>
+            {[0, 1, 2].map((i) => (
+              <View key={i} style={{ flexDirection: "row", alignItems: "center" }}>
+                <Text style={{ color: "#94a3b8", fontSize: 12, marginRight: 6 }}>{i + 1}</Text>
+                <Switch
+                  value={ambientTracks[i]}
+                  onValueChange={(v) => {
+                    const next: [boolean, boolean, boolean] = [
+                      ambientTracks[0],
+                      ambientTracks[1],
+                      ambientTracks[2],
+                    ];
+                    next[i] = v;
+                    setAmbientTracks(next);
+                    void saveAppState({ ambient_tracks: next });
+                  }}
+                  trackColor={{ false: "#374151", true: colors.primary }}
+                  thumbColor="#e5e7eb"
+                />
+              </View>
+            ))}
+          </View>
         </View>
       </Animated.View>
     </ScrollView>
+
+      {/* Take a break — overlay mini modal (when session completes) */}
+      {showReflection && (
+        <View
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "rgba(0,0,0,0.5)",
+            justifyContent: "center",
+            alignItems: "center",
+            paddingHorizontal: 24,
+            zIndex: 500,
+          }}
+        >
+          <View
+            style={{
+              backgroundColor: "#0f172a",
+              borderRadius: 16,
+              borderWidth: 1,
+              borderColor: "#1e293b",
+              paddingVertical: 20,
+              paddingHorizontal: 24,
+              alignItems: "center",
+              minWidth: 260,
+              maxWidth: 320,
+            }}
+          >
+            <Text
+              style={{
+                color: "#94a3b8",
+                fontSize: 14,
+                marginBottom: 16,
+                textAlign: "center",
+              }}
+            >
+              Take a {recoveryRecommendation ?? "5 min"} break?
+            </Text>
+            <Pressable
+              onPress={startNextSession}
+              style={({ pressed }) => ({
+                paddingVertical: 10,
+                paddingHorizontal: 20,
+                borderRadius: 12,
+                backgroundColor: colors.primary,
+                opacity: pressed ? 0.85 : 1,
+              })}
+            >
+              <Text style={{ color: "#000", fontWeight: "600", fontSize: 14 }}>
+                Start next session
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
 
       {/* History pull-up: swipe up to view past sessions — fully opaque, no transparency or gaps */}
       <Animated.View

@@ -7,7 +7,7 @@ const Navbar = () => {
   return (
     <View
       style={{
-        paddingTop: Math.max(24, insets.top + 12),
+        paddingTop: Math.max(30, insets.top + 12),
         paddingLeft: 38,
         paddingRight: 38,
         backgroundColor: "black",

@@ -33,6 +33,10 @@ export interface AppState {
   reminder_enabled: boolean;
   /** Hour of day 0-23 for daily reminder. */
   reminder_hour: number;
+  /** If false, show welcome/onboarding overlay (first install or after clear data). */
+  has_seen_onboarding: boolean;
+  /** Which of the 3 ambient tracks are enabled for mixing. */
+  ambient_tracks: [boolean, boolean, boolean];
 }
 
 const defaults: AppState = {
@@ -48,6 +52,8 @@ const defaults: AppState = {
   streak: 0,
   reminder_enabled: false,
   reminder_hour: 18,
+  has_seen_onboarding: false,
+  ambient_tracks: [false, false, false],
 };
 
 export async function loadAppState(): Promise<AppState> {
@@ -55,7 +61,12 @@ export async function loadAppState(): Promise<AppState> {
     const raw = await getItem(KEY);
     if (!raw) return { ...defaults };
     const parsed = JSON.parse(raw) as Partial<AppState>;
-    return { ...defaults, ...parsed };
+    const result = { ...defaults, ...parsed };
+    if (parsed.has_seen_onboarding === undefined) result.has_seen_onboarding = true;
+    if (!Array.isArray(parsed.ambient_tracks) || parsed.ambient_tracks.length !== 3) {
+      result.ambient_tracks = [false, false, false];
+    }
+    return result;
   } catch {
     return { ...defaults };
   }

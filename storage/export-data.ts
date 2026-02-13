@@ -1,59 +1,22 @@
-import { loadAppState } from "@/storage/app-state";
-import { getSessions, type SessionRecord } from "@/storage/sessions";
+import { loadAppState } from "./app-state";
+import type { SessionRecord } from "./sessions";
+import { getSessions } from "./sessions";
 
-export interface ExportPayload {
-  exported_at: string;
-  app_state: Awaited<ReturnType<typeof loadAppState>>;
-  sessions: SessionRecord[];
-}
-
-/**
- * Loads all app data from device storage and returns an object suitable for JSON export.
- */
-export async function buildExportPayload(): Promise<ExportPayload> {
-  const [app_state, sessions] = await Promise.all([
-    loadAppState(),
-    getSessions(),
-  ]);
-  return {
-    exported_at: new Date().toISOString(),
-    app_state,
-    sessions,
-  };
-}
-
-/**
- * Returns export data as a JSON string (from device storage).
- */
 export async function buildExportJSON(): Promise<string> {
-  const payload = await buildExportPayload();
+  const [rawSessions, state] = await Promise.all([getSessions(), loadAppState()]);
+  const sessions = Array.isArray(rawSessions) ? rawSessions : [];
+  const payload = { exported_at: new Date().toISOString(), sessions, app_state: state };
   return JSON.stringify(payload, null, 2);
 }
 
-const CSV_HEADERS = "duration_minutes,completed_at,completed,reflection";
-
-function escapeCsvCell(value: string | number | boolean | undefined): string {
-  if (value === undefined || value === null) return "";
-  const s = String(value);
-  if (s.includes(",") || s.includes('"') || s.includes("\n")) {
-    return `"${s.replace(/"/g, '""')}"`;
-  }
-  return s;
-}
-
-/**
- * Returns sessions as CSV string (from device storage).
- */
 export async function buildExportCSV(): Promise<string> {
-  const sessions = await getSessions();
-  const rows = sessions.map(
-    (s) =>
-      [
-        s.duration_minutes,
-        s.completed_at,
-        s.completed === false ? "false" : "true",
-        s.reflection ?? "",
-      ].map(escapeCsvCell).join(",")
-  );
-  return [CSV_HEADERS, ...rows].join("\n");
+  const raw = await getSessions();
+  const sessions = Array.isArray(raw) ? raw : [];
+  const header = "duration_minutes,completed_at,completed,reflection";
+  const rows = sessions.map((s: SessionRecord) => {
+    const ref = (s.reflection ?? "").replace(/"/g, '""');
+    const completedAt = s.completed_at != null ? String(s.completed_at) : "";
+    return `${s.duration_minutes ?? ""},${completedAt},${s.completed !== false},${ref ? `"${ref}"` : ""}`;
+  });
+  return [header, ...rows].join("\n");
 }

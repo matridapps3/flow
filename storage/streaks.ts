@@ -38,6 +38,7 @@ function isValidDate(iso: string): boolean {
 }
 
 export function getDailyStreak(sessions: SessionRecord[]): number {
+  if (!Array.isArray(sessions)) return 0;
   const completed = sessions.filter(
     (s) => s.completed !== false && s.completed_at && isValidDate(s.completed_at)
   );
@@ -84,6 +85,7 @@ function previousWeekKey(weekKey: string): string {
  * Only completed sessions with valid completed_at are counted.
  */
 export function getWeeklyStreak(sessions: SessionRecord[]): number {
+  if (!Array.isArray(sessions)) return 0;
   const completed = sessions.filter(
     (s) => s.completed !== false && s.completed_at && isValidDate(s.completed_at)
   );
@@ -111,6 +113,7 @@ export function getWeeklyStreak(sessions: SessionRecord[]): number {
  * Used for milestone messages like "3 more to match your best week (8)".
  */
 export function getBestWeekCount(sessions: SessionRecord[]): number {
+  if (!Array.isArray(sessions)) return 0;
   const completed = sessions.filter(
     (s) => s.completed !== false && s.completed_at && isValidDate(s.completed_at)
   );

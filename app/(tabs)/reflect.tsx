@@ -1,8 +1,3 @@
-import { loadAppState, saveAppState } from "@/storage/app-state";
-import {
-  getSessions,
-  updateLatestCompletedSessionReflection,
-} from "@/storage/sessions";
 import { useFocusEffect } from "@react-navigation/native";
 import { useCallback, useState } from "react";
 import {
@@ -14,6 +9,11 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { saveAppState } from "../../storage/app-state";
+import {
+  getSessions,
+  updateLatestCompletedSessionReflection,
+} from "../../storage/sessions";
 
 export default function Reflect() {
   const colors = {
@@ -28,32 +28,64 @@ export default function Reflect() {
 
   const [reflection, setReflection] = useState("");
   const [saved, setSaved] = useState(false);
+  const [pastNotes, setPastNotes] = useState<{ completed_at: string; reflection: string }[]>([]);
 
-  useFocusEffect(
-    useCallback(() => {
-      getSessions().then((sessions) => {
-        const completed = sessions.filter((s) => s.completed !== false);
-        const latest = completed[0];
-        if (latest?.reflection) {
-          setReflection(latest.reflection);
-          setSaved(true);
-        } else {
-          setReflection("");
-          setSaved(false);
-        }
-      });
-    }, [])
-  );
+  const loadSessions = useCallback(() => {
+    getSessions().then((sessions) => {
+      const list = Array.isArray(sessions) ? sessions : [];
+      const completed = list.filter((s) => s.completed !== false);
+      const latest = completed[0];
+      if (latest?.reflection) {
+        setReflection(latest.reflection);
+        setSaved(true);
+      } else {
+        setReflection("");
+        setSaved(false);
+      }
+      const withReflection = list.filter(
+        (s) => s.reflection && typeof s.reflection === "string" && s.reflection.trim() !== ""
+      );
+      setPastNotes(
+        withReflection.map((s) => ({
+          completed_at: s.completed_at,
+          reflection: (s.reflection ?? "").trim(),
+        }))
+      );
+    });
+  }, []);
+
+  useFocusEffect(useCallback(() => loadSessions(), [loadSessions]));
 
   const saveReflection = async () => {
     if (!reflection.trim()) return;
     await updateLatestCompletedSessionReflection(reflection);
     await saveAppState({ show_reflection: false });
     setSaved(true);
+    loadSessions();
   };
 
   const skipReflection = async () => {
     await saveAppState({ show_reflection: false });
+  };
+
+  const formatNoteDate = (iso: string) => {
+    if (!iso || typeof iso !== "string") return "—";
+    const d = new Date(iso);
+    if (!Number.isFinite(d.getTime())) return "—";
+    const now = new Date();
+    const isToday =
+      d.getDate() === now.getDate() &&
+      d.getMonth() === now.getMonth() &&
+      d.getFullYear() === now.getFullYear();
+    if (isToday) {
+      return `Today ${d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+    }
+    return d.toLocaleDateString([], {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
   };
 
   return (
@@ -90,13 +122,12 @@ export default function Reflect() {
       <ScrollView
         contentContainerStyle={{
           flexGrow: 1,
-          justifyContent: "center",
           paddingHorizontal: 20,
           paddingBottom: 40,
         }}
         keyboardShouldPersistTaps="handled"
       >
-        {/* ───── Reflection Card ───── */}
+        {/* ───── What stood out (top) ───── */}
         <View
           style={{
             backgroundColor: colors.card,
@@ -193,6 +224,52 @@ export default function Reflect() {
               </Text>
             )}
           </View>
+        </View>
+
+        {/* ───── Added notes (saved reflections, below) ───── */}
+        <View style={{ marginTop: 28 }}>
+          <Text
+            style={{
+              color: colors.muted,
+              fontSize: 11,
+              letterSpacing: 1.4,
+              marginBottom: 12,
+            }}
+          >
+            PAST REFLECTIONS
+          </Text>
+          {pastNotes.length === 0 ? (
+            <Text style={{ color: colors.muted, fontSize: 13 }}>
+              No saved notes yet. Save a reflection above to see it here.
+            </Text>
+          ) : (
+            pastNotes.map((note, i) => (
+              <View
+                key={`${note.completed_at}-${i}`}
+                style={{
+                  backgroundColor: colors.card,
+                  borderRadius: 12,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                  padding: 14,
+                  marginBottom: 10,
+                }}
+              >
+                <Text
+                  style={{
+                    color: colors.muted,
+                    fontSize: 11,
+                    marginBottom: 6,
+                  }}
+                >
+                  {formatNoteDate(note.completed_at)}
+                </Text>
+                <Text style={{ color: colors.text, fontSize: 15, lineHeight: 22 }}>
+                  {note.reflection}
+                </Text>
+              </View>
+            ))
+          )}
         </View>
 
         {/* ───── Gentle Guidance ───── */}

@@ -48,6 +48,14 @@ export async function getSessions(): Promise<SessionRecord[]> {
 }
 
 export async function saveSession(session: SessionRecord): Promise<void> {
+  if (
+    session == null ||
+    typeof session.duration_minutes !== "number" ||
+    !session.completed_at ||
+    typeof session.completed_at !== "string"
+  ) {
+    return;
+  }
   const existingSessions = await getSessions();
   const updatedSessions = [session, ...existingSessions];
   await setItem(SESSIONS_KEY, JSON.stringify(updatedSessions));

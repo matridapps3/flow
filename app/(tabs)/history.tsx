@@ -1,6 +1,7 @@
-import { getSessionTypeLabel } from "@/storage/analytics";
-import { loadAppState, saveAppState } from "@/storage/app-state";
-import { clearSessions, getSessions, type SessionRecord } from "@/storage/sessions";
+import { getMilestoneMessage, getMomentum, getSessionTypeLabel } from "../../storage/analytics";
+import { loadAppState, saveAppState } from "../../storage/app-state";
+import { clearSessions, getSessions, type SessionRecord } from "../../storage/sessions";
+import { getDailyStreak, getWeeklyStreak } from "../../storage/streaks";
 import { useFocusEffect } from "@react-navigation/native";
 import { useCallback, useRef, useState } from "react";
 import {
@@ -20,18 +21,27 @@ export default function History() {
   const [avgScore, setAvgScore] = useState(0);
   const [sessions, setSessions] = useState<SessionRecord[]>([]);
   const [clearing, setClearing] = useState(false);
+  const [dailyStreak, setDailyStreak] = useState(0);
+  const [weeklyStreak, setWeeklyStreak] = useState(0);
+  const [momentum, setMomentum] = useState<"up" | "down" | "stable" | null>(null);
+  const [milestoneMessage, setMilestoneMessage] = useState<string | null>(null);
 
   const runClearHistory = useCallback(async () => {
     setClearing(true);
     try {
       await clearSessions();
-      await saveAppState({ today_sessions: 0, week_sessions: 0 });
+      await saveAppState({ today_sessions: 0, week_sessions: 0, has_seen_onboarding: false });
       const list = await getSessions();
       const state = await loadAppState();
-      setSessions(list);
-      setSessionsCount(list.length);
-      setCompletedCount(list.filter((s) => s.completed !== false).length);
+      const sessions = Array.isArray(list) ? list : [];
+      setSessions(sessions);
+      setSessionsCount(sessions.length);
+      setCompletedCount(sessions.filter((s) => s.completed !== false).length);
       setAvgScore(state.focus_score);
+      setDailyStreak(getDailyStreak(sessions));
+      setWeeklyStreak(getWeeklyStreak(sessions));
+      setMomentum(getMomentum(sessions));
+      setMilestoneMessage(getMilestoneMessage(sessions));
     } catch {
       if (Platform.OS === "web" && typeof window !== "undefined") {
         window.alert("Could not clear history.");
@@ -67,9 +77,14 @@ export default function History() {
     useCallback(() => {
       loadAppState().then((s) => setAvgScore(s.focus_score));
       getSessions().then((list) => {
-        setSessions(list);
-        setSessionsCount(list.length);
-        setCompletedCount(list.filter((s) => s.completed !== false).length);
+        const sessions = Array.isArray(list) ? list : [];
+        setSessions(sessions);
+        setSessionsCount(sessions.length);
+        setCompletedCount(sessions.filter((s) => s.completed !== false).length);
+        setDailyStreak(getDailyStreak(sessions));
+        setWeeklyStreak(getWeeklyStreak(sessions));
+        setMomentum(getMomentum(sessions));
+        setMilestoneMessage(getMilestoneMessage(sessions));
       });
     }, [])
   );
@@ -147,6 +162,56 @@ export default function History() {
           <Stat label="SESSIONS" value={sessionsCount} />
           <Stat label="COMPLETED" value={completedCount} />
           <Stat label="AVG SCORE" value={avgScore} />
+        </View>
+
+        {/* ───── Streaks ───── */}
+        <View
+          style={{
+            marginHorizontal: 24,
+            marginBottom: 20,
+            paddingVertical: 14,
+            paddingHorizontal: 16,
+            borderRadius: 12,
+            backgroundColor: colors.card,
+            borderWidth: 1,
+            borderColor: colors.border,
+          }}
+        >
+          <Text
+            style={{
+              color: colors.muted,
+              fontSize: 11,
+              fontWeight: "600",
+              letterSpacing: 1,
+              marginBottom: 10,
+            }}
+          >
+            STREAKS
+          </Text>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
+            <Text style={{ color: colors.text, fontSize: 14 }}>
+              Daily: {dailyStreak} day{dailyStreak !== 1 ? "s" : ""}
+            </Text>
+            <Text style={{ color: colors.text, fontSize: 14 }}>
+              Weekly: {weeklyStreak} week{weeklyStreak !== 1 ? "s" : ""}
+            </Text>
+            {momentum != null && (
+              <Text style={{ color: colors.text, fontSize: 14 }}>
+                Momentum: {momentum}
+              </Text>
+            )}
+          </View>
+          {milestoneMessage ? (
+            <Text
+              style={{
+                color: colors.accent,
+                fontSize: 13,
+                marginTop: 8,
+              }}
+            >
+              {milestoneMessage}
+            </Text>
+          ) : null}
         </View>
 
         {sessions.length > 0 && (
@@ -243,7 +308,7 @@ export default function History() {
                       fontWeight: "600",
                     }}
                   >
-                    {s.duration_minutes} min
+                    {typeof s.duration_minutes === "number" && Number.isFinite(s.duration_minutes) ? s.duration_minutes : "—"} min
                   </Text>
                   <Text
                     style={{

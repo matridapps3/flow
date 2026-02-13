@@ -4,8 +4,8 @@ import {
   getBestPeakWindow,
   getBestPracticeSentence,
   getBurnoutRisk,
-  getCompositeFocusScore,
   getCompletionStats,
+  getCompositeFocusScore,
   getDaysActiveThisWeek,
   getMilestoneMessage,
   getMomentum,
@@ -18,12 +18,13 @@ import {
   type CompletionStats,
   type MomentumKind,
   type ThisWeekVsAverage,
-} from "@/storage/analytics";
-import { DURATIONS } from "@/storage/constants";
-import { loadAppState, resetAppState, saveAppState } from "@/storage/app-state";
-import { buildExportCSV, buildExportJSON } from "@/storage/export-data";
-import { clearSessions, getSessions } from "@/storage/sessions";
-import { getDailyStreak, getWeeklyStreak } from "@/storage/streaks";
+} from "../../storage/analytics";
+import { loadAppState, resetAppState, saveAppState } from "../../storage/app-state";
+import { DURATIONS } from "../../storage/constants";
+import { buildExportCSV, buildExportJSON } from "../../storage/export-data";
+import { syncDailyReminder } from "../../storage/notifications";
+import { clearSessions, getSessions } from "../../storage/sessions";
+import { getDailyStreak, getWeeklyStreak } from "../../storage/streaks";
 import { useFocusEffect } from "@react-navigation/native";
 import { useCallback, useState } from "react";
 import {
@@ -36,7 +37,6 @@ import {
   Text,
   View,
 } from "react-native";
-import { syncDailyReminder } from "@/storage/notifications";
 
 /**
  * INSIGHTS SCREEN
@@ -82,12 +82,13 @@ export default function Insights() {
     try {
       await clearSessions();
       await resetAppState();
-      const sessions = await getSessions();
+      const rawSessions = await getSessions();
+      const sessions = Array.isArray(rawSessions) ? rawSessions : [];
       const state = await loadAppState();
       setSessionsCount(sessions.length);
-      setWeekSessions(state.week_sessions);
-      setReminderEnabled(state.reminder_enabled);
-      setReminderHour(state.reminder_hour);
+      setWeekSessions(state.week_sessions ?? 0);
+      setReminderEnabled(state.reminder_enabled ?? false);
+      setReminderHour(state.reminder_hour ?? 18);
       setDailyStreak(getDailyStreak(sessions));
       setWeeklyStreak(getWeeklyStreak(sessions));
       setCompletionStats(getCompletionStats(sessions));
@@ -184,29 +185,30 @@ export default function Insights() {
   useFocusEffect(
     useCallback(() => {
       getSessions().then((sessions) => {
-        setSessionsCount(sessions.length);
-        setDailyStreak(getDailyStreak(sessions));
-        setWeeklyStreak(getWeeklyStreak(sessions));
-        setCompletionStats(getCompletionStats(sessions));
-        setBestPractice(getBestPracticeSentence(sessions));
-        setMomentum(getMomentum(sessions));
-        setMilestoneMessage(getMilestoneMessage(sessions));
-        setThisWeekVsAvg(getThisWeekVsAverage(sessions));
-        setBestDay(getBestDayOfWeek(sessions));
-        setRegressionMessage(getRegressionMessage(sessions));
-        setPeakWindow(getBestPeakWindow(sessions));
-        setReflectionThemes(getReflectionThemes(sessions));
-        setDaysActiveThisWeek(getDaysActiveThisWeek(sessions));
-        setAttentionSpanTrend(getAttentionSpanTrend(sessions));
-        setBurnoutRisk(getBurnoutRisk(sessions));
-        setWeeklyTrendCounts(getWeeklyCompletionCounts(sessions, 8));
+        const list = Array.isArray(sessions) ? sessions : [];
+        setSessionsCount(list.length);
+        setDailyStreak(getDailyStreak(list));
+        setWeeklyStreak(getWeeklyStreak(list));
+        setCompletionStats(getCompletionStats(list));
+        setBestPractice(getBestPracticeSentence(list));
+        setMomentum(getMomentum(list));
+        setMilestoneMessage(getMilestoneMessage(list));
+        setThisWeekVsAvg(getThisWeekVsAverage(list));
+        setBestDay(getBestDayOfWeek(list));
+        setRegressionMessage(getRegressionMessage(list));
+        setPeakWindow(getBestPeakWindow(list));
+        setReflectionThemes(getReflectionThemes(list));
+        setDaysActiveThisWeek(getDaysActiveThisWeek(list));
+        setAttentionSpanTrend(getAttentionSpanTrend(list));
+        setBurnoutRisk(getBurnoutRisk(list));
+        setWeeklyTrendCounts(getWeeklyCompletionCounts(list, 8));
         setSuccessPatternSentence(
-          getSuccessPatternSentence(sessions, getBestDayOfWeek(sessions), getBestPeakWindow(sessions))
+          getSuccessPatternSentence(list, getBestDayOfWeek(list), getBestPeakWindow(list))
         );
-        const twa = getThisWeekVsAverage(sessions);
+        const twa = getThisWeekVsAverage(list);
         setPersonalBaselineCopy(getPersonalBaselineCopy(twa));
         setCompositeFocusScore(
-          getCompositeFocusScore(sessions, getDailyStreak(sessions), getWeeklyStreak(sessions))
+          getCompositeFocusScore(list, getDailyStreak(list), getWeeklyStreak(list))
         );
       });
       loadAppState().then((s) => {
@@ -222,7 +224,7 @@ export default function Insights() {
       setReminderEnabled(enabled);
       setReminderHour(hour);
       await saveAppState({ reminder_enabled: enabled, reminder_hour: hour });
-      await syncDailyReminder();
+      await syncDailyReminder(enabled, hour);
     },
     []
   );
@@ -678,7 +680,7 @@ export default function Insights() {
               {completionStats.overallRate}% overall ({completionStats.completed}/{completionStats.total})
             </Text>
             <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-              {DURATIONS.map((d) => {
+              {DURATIONS.map((d: number) => {
                 const by = completionStats.byDuration[d];
                 if (!by || by.total === 0) return null;
                 return (
