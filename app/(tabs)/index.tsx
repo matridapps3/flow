@@ -661,7 +661,7 @@ export default function HomeScreen() {
             marginTop: 40,
             alignSelf: "stretch",
             marginHorizontal: 40,
-            paddingVertical: 17,
+            paddingVertical: 16,
             paddingHorizontal: 20,
             borderRadius: 14,
             backgroundColor: inactiveButtonBg,
