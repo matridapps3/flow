@@ -14,13 +14,6 @@ import {
 import Svg, { Circle } from "react-native-svg";
 import WelcomeScreen from "../../components/welcome-screen";
 import {
-  getRecoveryRecommendation,
-  getSessionTypeLabel,
-  getWorkloadWarning,
-} from "../../storage/analytics";
-import { loadAppState, saveAppState } from "../../storage/app-state";
-import { DURATIONS } from "../../storage/constants";
-import {
   fadeInAmbient,
   fadeOutAmbient,
   initAmbientSound,
@@ -28,6 +21,13 @@ import {
   releaseAmbientSound,
   stopAmbientTracks,
 } from "../../storage/ambient-sound";
+import {
+  getRecoveryRecommendation,
+  getSessionTypeLabel,
+  getWorkloadWarning,
+} from "../../storage/analytics";
+import { loadAppState, saveAppState } from "../../storage/app-state";
+import { DURATIONS } from "../../storage/constants";
 import { getSessions, saveSession, type SessionRecord } from "../../storage/sessions";
 
 const HISTORY_PANEL_HEIGHT = 280;
@@ -119,22 +119,21 @@ export default function HomeScreen() {
     ambientTracks,
   ]);
 
-  /* ---------------- RESPONSIVE CONSTANTS ---------------- */
-  const MIN_RING = 240;
-  const MAX_RING = 340;
-  const RING_HORIZONTAL_PADDING = 32;
-
-  const RING_SIZE = Math.min(
-    MAX_RING,
-    width - RING_HORIZONTAL_PADDING * 2,
-    Math.max(MIN_RING, width * 0.72)
-  );
+  /* ---------------- RESPONSIVE CONSTANTS: ring capped so controls + duration + ambient stay on screen ---------------- */
+  const MIN_RING = 140;
+  const MAX_RING = 300;
+  const RING_HORIZONTAL_PADDING = Math.max(16, Math.min(32, width * 0.08));
+  const availableHeight = height - (HISTORY_HANDLE_HEIGHT + 24 + 60);
+  const spaceForContentBelow = 340;
+  const ringMaxByHeight = availableHeight - spaceForContentBelow;
+  const ringByWidth = Math.min(MAX_RING, width - RING_HORIZONTAL_PADDING * 2, Math.max(MIN_RING, width * 0.65));
+  const RING_SIZE = Math.min(ringByWidth, Math.max(MIN_RING, ringMaxByHeight));
 
   const RING_BORDER = RING_SIZE - 28;
 
-  const TIMER_FONT = Math.min(76, Math.max(44, width * 0.17));
+  const TIMER_FONT = Math.min(64, Math.max(32, Math.round(RING_SIZE * 0.22)));
 
-  const VERTICAL_PADDING = Math.max(24, height * 0.04);
+  const VERTICAL_PADDING = Math.max(12, Math.min(24, height * 0.025));
 
   /* ---------------- COLORS ---------------- */
   const colors = {
@@ -449,6 +448,7 @@ export default function HomeScreen() {
         contentContainerStyle={{
           flexGrow: 1,
           justifyContent: "center",
+        
           backgroundColor: 'black',
           paddingVertical: VERTICAL_PADDING,
           paddingHorizontal: RING_HORIZONTAL_PADDING,
@@ -563,6 +563,7 @@ export default function HomeScreen() {
               style={({ pressed }) => ({
                 padding: 16,
                 borderRadius: 14,
+                marginTop: -10,
                 width: 95,
                 alignItems: "center",
                 backgroundColor: colors.primary,
@@ -659,7 +660,7 @@ export default function HomeScreen() {
           style={{
             marginTop: 40,
             alignSelf: "stretch",
-            marginHorizontal: 58,
+            marginHorizontal: 40,
             paddingVertical: 17,
             paddingHorizontal: 20,
             borderRadius: 14,
